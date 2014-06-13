@@ -12,9 +12,11 @@ example: http://testbedapps.sura.org/thredds/dodsC/alldata/Inundation/vims/selfe
 http://testbedapps.sura.org/thredds/dodsC/alldata/Inundation/vims/selfe_tropical/runs/Ike/2D_varied_manning_windstress/04_dir.ncml
 7. In Matlab, open that OPeNDAP Data URL using the NCTOOLBOX  "ncgeodataset"
 example:
+```
 url = 'http://testbedapps.sura.org/thredds/dodsC/alldata/Inundation/vims/selfe_tropical/runs/Ike/2D_varied_manning_windstress/04_dir.ncml'
 nc = ncgeodataset(url)
 nc.variables
+```
 
 B. Add the dataset to the Google Doc:
 https://docs.google.com/spreadsheet/ccc?key=0AjAHlPEEP_ujdHJLaENFYTRGVmw5U0RfMWhuWXNqRkE#gid=0
@@ -31,7 +33,8 @@ http://testbedapps.sura.org/thredds/inundation.html
 
 If you use this catalog to navigate to the OPeNDAP Data URL, you can
 access this the same way in Matlab.  Example:
-
+```
 url = 'http://testbedapps-dev.sura.org/thredds/dodsC/in/vims/selfe/ike/ultralite/vardrag/nowave/2d'
 nc = ncgeodataset(url)
 nc.variables
+```
