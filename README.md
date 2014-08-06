@@ -3,5 +3,5 @@ IOOS Coastal and Ocean Modeling Testbed (COMT)
 
 This is a place to discuss issues, share code, and share examples of how to use the IOOS Coastal and Ocean Modeling Testbed
 
-More info on the [COMT Github Repo Wiki](https://github.com/ioos/comt/wiki)
+More info on the [GitHub COMT Wiki](https://github.com/ioos/comt/wiki)
 
