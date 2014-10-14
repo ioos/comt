@@ -3,12 +3,11 @@
 # Rotates the grid direction velocity in a ROMS output file to geographic east/north
 # coordinates and reports this on a reduced rho-points centered grid (reduced because the
 # first/last row/column of data is lost in the interpolation to the rho points).
-# Reduced grid coordinates are named lon_red,lat_red
 #
 # Uses NCO tools http://http://nco.sourceforge.net
 #
-# John Wilkin and Rich Signell
-# October 4, 2014
+# John Wilkin, Rich Signell, and Kyle Wilcox
+# October 14, 2014
 
 # handy functions from http://nco.sourceforge.net/nco.html#Filters-for-ncks
 function ncdmnsz { ncks -m -M ${2} | grep -E -i ": ${1}, size =" | cut -f 7 -d ' ' | uniq ; }
@@ -21,18 +20,24 @@ if [ "$#" -eq "0" ]
     exit
 fi
 
+
+RAND=$RANDOM
+#echo "Run number: $RAND"
+
 # set the file to process
 echo "Setting temporary file locations..."
 INPUT=$1
-TMPNC=/tmp/$RANDOM.nc
-TMPULB=/tmp/tmpulb_$RANDOM.nc
-TMPUUB=/tmp/tmpuub_$RANDOM.nc
-TMPU=/tmp/tmpu_$RANDOM.nc
-TMPVLB=/tmp/tmpvlb_$RANDOM.nc
-TMPVUB=/tmp/tmpvub_$RANDOM.nc
-TMPV=/tmp/tmpu_$RANDOM.nc
-TMPUV_ANGLE=/tmp/tmpuvangle_$RANDOM.nc
-NEWDATA=/tmp/tmpnewdata_$RANDOM.nc
+TMPNC=/tmp/$RAND.nc
+TMPULB=/tmp/tmpulb_$RAND.nc
+TMPUUB=/tmp/tmpuub_$RAND.nc
+TMPU=/tmp/tmpu_$RAND.nc
+TMPVLB=/tmp/tmpvlb_$RAND.nc
+TMPVUB=/tmp/tmpvub_$RAND.nc
+TMPV=/tmp/tmpv_$RAND.nc
+TMPUV_ANGLE=/tmp/tmpuvangle_$RAND.nc
+NEWDATA=/tmp/tmpnewdata_$RAND.nc
+REGRIDDED=/tmp/tmpregridded_$RAND.nc
+NCOSCRIPT=/tmp/tmpncoscript_$RAND.nco
 
 if [ "$#" -eq "1" ]; then
   echo "Please supply an output file as the second argument"
@@ -112,22 +117,39 @@ ncks -q -A $TMPV $TMPUV_ANGLE
 echo "Rotating vectors..."
 ncap2 -O -s 'ue=u*cos(angle)-v*sin(angle)' -s 'vn=u*sin(angle)+v*cos(angle)' $TMPUV_ANGLE $NEWDATA
 
-# make the coordinate names and attributes consistent
-echo "Setting metadata attributes..."
-ncrename -v lon_rho,lon_red $NEWDATA
-ncrename -v lat_rho,lat_red $NEWDATA
-ncatted -a coordinates,ue,m,c,"lon_red lat_red s_rho $time" $NEWDATA
-ncatted -a coordinates,vn,m,c,"lon_red lat_red s_rho $time" $NEWDATA
-# add standard name to new variables
-ncatted -a standard_name,ue,a,c,"eastward_sea_water_velocity" $NEWDATA
-ncatted -a standard_name,vn,a,c,"northward_sea_water_velocity" $NEWDATA
+cat <<EOF > $NCOSCRIPT
+defdim("eta_rho",\$eta_red.size+2);
+defdim("xi_rho",\$xi_red.size+2);
+u_rho[\$$time,\$s_rho,\$eta_rho,\$xi_rho]=ue@_FillValue;
+u_rho(:,:,1:\$eta_rho.size-2,1:\$xi_rho.size-2)=ue;
+v_rho[\$$time,\$s_rho,\$eta_rho,\$xi_rho]=vn@_FillValue;
+v_rho(:,:,1:\$eta_rho.size-2,1:\$xi_rho.size-2)=vn;
+EOF
+ncap2 -v -S $NCOSCRIPT $NEWDATA $REGRIDDED
 
 echo "Appending rotated U and V to original file..."
 # append new data to copy of input file
 cp $INPUT $OUTPUT
-ncks -q -A $NEWDATA $OUTPUT
+ncks -q -A -v u_rho,v_rho $REGRIDDED $OUTPUT
+
+# make the coordinate names and attributes consistent
+echo "Setting metadata attributes..."
+ncatted -a coordinates,u_rho,o,c,"$time s_rho lon_rho lat_rho" \
+        -a '_FillValue',u_rho,o,d,1.e+37 \
+        -a units,u_rho,o,c,'meter second-1' \
+        -a long_name,u_rho,o,c,'u-momentum component' \
+        -a coordinates,v_rho,o,c,"$time s_rho lon_rho lat_rho" \
+        -a '_FillValue',v_rho,o,d,1.e+37 \
+        -a units,v_rho,o,c,'meter second-1' \
+        -a long_name,v_rho,o,c,'v-momentum component' \
+        $OUTPUT
+
+# add standard name to new variables
+ncatted -a standard_name,u_rho,o,c,"eastward_sea_water_velocity" \
+        -a standard_name,v_rho,o,c,"northward_sea_water_velocity" \
+        $OUTPUT
 
 echo "Removing temporary files..."
-rm -f $TMPNC $TMPULB $TMPUUB $TMPU $TMPVLB $TMPVUB $TMPV $TMPUV_ANGLE $NEWDATA
+rm -f $TMPNC $TMPULB $TMPUUB $TMPU $TMPVLB $TMPVUB $TMPV $TMPUV_ANGLE $NEWDATA $REGRIDDED $NCOSCRIPT
 
 echo "Done!"
