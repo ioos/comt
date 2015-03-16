@@ -5,106 +5,124 @@
 
 # In[1]:
 
-import matplotlib.tri as tri
-import datetime as dt
+name_list=['sea_surface_elevation',
+           'sea_surface_height_above_geoid',
+           'sea_surface_height','water level',
+           'sea_surface_height_above_sea_level',
+           'water_surface_height_above_reference_datum',
+           'sea_surface_height_above_reference_ellipsoid']
+
+
+models = dict(ADCIRC=('http://comt.sura.org/thredds/dodsC/data/comt_1_archive/inundation_tropical/'
+                      'UND_ADCIRC/Hurricane_Ike_2D_final_run_with_waves'),
+              FVCOM=('http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/'
+                     'Forecasts/NECOFS_GOM3_FORECAST.nc'),
+              SELFE=('http://comt.sura.org/thredds/dodsC/data/comt_1_archive/inundation_tropical/'
+                     'VIMS_SELFE/Hurricane_Ike_2D_final_run_with_waves'),
+              WW3=('http://comt.sura.org/thredds/dodsC/data/comt_2/pr_inundation_tropical/EMC_ADCIRC-WW3/'
+                   'Dec2013Storm_2D_preliminary_run_1_waves_only'))
 
 
 # In[2]:
 
-import cartopy.crs as ccrs
 import iris
 iris.FUTURE.netcdf_promote = True
-import pyugrid
+
+
+def cube_func(cube):
+    return (cube.standard_name in name_list) and (not any(m.method == 'maximum' for m in cube.cell_methods))
+
+constraint = iris.Constraint(cube_func=cube_func)
+
+cubes = dict()
+for model, url in models.items():
+    cube = iris.load_cube(url, constraint)
+    cubes.update({model: cube})
 
 
 # In[3]:
 
-#ADCIRC
-url =  'http://comt.sura.org/thredds/dodsC/data/comt_1_archive/inundation_tropical/UND_ADCIRC/Hurricane_Ike_2D_final_run_with_waves'
-
-#FVCOM
-#url = 'http://www.smast.umassd.edu:8080/thredds/dodsC/FVCOM/NECOFS/Forecasts/NECOFS_GOM3_FORECAST.nc'
-
-#SELFE
-#url = 'http://comt.sura.org/thredds/dodsC/data/comt_1_archive/inundation_tropical/VIMS_SELFE/Hurricane_Ike_2D_final_run_with_waves'
-
-#WW3
-url='http://comt.sura.org/thredds/dodsC/data/comt_2/pr_inundation_tropical/EMC_ADCIRC-WW3/Dec2013Storm_2D_preliminary_run_1_waves_only'
+cubes
 
 
 # In[4]:
 
-cube = iris.load_cube(url,'sea_surface_height_above_geoid')
+import pyugrid
+import matplotlib.tri as tri
+
+
+def get_mesh(cube, url):
+    ug = pyugrid.UGrid.from_ncfile(url)
+    cube.mesh = ug
+    cube.mesh_dimension = 1
+    return cube
+    
+def get_triang(cube):
+    lon = cube.mesh.nodes[:, 0]
+    lat = cube.mesh.nodes[:, 1]
+    nv = cube.mesh.faces
+    return tri.Triangulation(lon, lat, triangles=nv)
 
 
 # In[5]:
 
-print cube
+tris = dict()
+
+for model, cube in cubes.items():
+    url = models[model]
+    cube = get_mesh(cube, url)
+    cubes.update({model: cube})
+    tris.update({model: get_triang(cube)})
 
 
 # In[6]:
 
-# Desired time for snapshot
-# ....right now (or some number of hours from now) ...
-start = dt.datetime.utcnow() + dt.timedelta(hours=6)
-# ... or specific time (UTC)
-#start = dt.datetime(2013,3,2,15,0,0)
+get_ipython().magic('matplotlib inline')
+
+import numpy as np
+import cartopy.crs as ccrs
+import matplotlib.pyplot as plt
+
+def plot_model(model):
+    cube = cubes[model]
+    lon = cube.mesh.nodes[:, 0]
+    lat = cube.mesh.nodes[:, 1]
+    ind = -1 # just take the last time index for now
+    zcube = cube[ind]
+    triang = tris[model]
+
+    fig, ax = plt.subplots(figsize=(7, 7),
+                           subplot_kw=dict(projection=ccrs.PlateCarree()))
+    ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()])
+    ax.coastlines()
+    levs = np.arange(-1, 5, 0.2)
+    cs = ax.tricontourf(triang, zcube.data, levels=levs)
+    fig.colorbar(cs)
+    ax.tricontour(triang, zcube.data, colors='k',levels=levs)
+    tvar = cube.coord('time')
+    tstr = tvar.units.num2date(tvar.points[ind])
+    gl = ax.gridlines(draw_labels=True)
+    gl.xlabels_top = gl.ylabels_right = False
+    title = ax.set_title('%s: Elevation (m): %s' % (zcube.attributes['title'], tstr))
+    return fig, ax
 
 
 # In[7]:
 
-ug = pyugrid.UGrid.from_ncfile(url)
-
-# What's in there?
-#print "There are %i nodes"%ug.nodes.shape[0]
-#print "There are %i edges"%ug.edges.shape[0]
-#print "There are %i faces"%ug.faces.shape[0]
+fig, ax = plot_model('ADCIRC')
 
 
 # In[8]:
 
-cube.mesh = ug
-cube.mesh_dimension = 1  # (0:time,1:node)
+fig, ax = plot_model('FVCOM')
 
 
 # In[9]:
 
-lon = cube.mesh.nodes[:,0]
-lat = cube.mesh.nodes[:,1]
-nv = cube.mesh.faces
+fig, ax = plot_model('WW3')
 
 
 # In[10]:
 
-triang = tri.Triangulation(lon,lat,triangles=nv)
-
-
-# In[11]:
-
-# skip trying to find the closest time index to requested time, because it's messy
-ind = -1 # just take the last time index for now
-zcube = cube[ind]
-
-
-# In[12]:
-
-figure(figsize=(12,12))
-ax = plt.axes(projection=ccrs.PlateCarree())
-ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()])
-ax.coastlines()
-levs=arange(-1,5,.2)
-tricontourf(triang, zcube.data, levels=levs)
-colorbar()
-tricontour(triang, zcube.data, colors='k',levels=levs)
-tvar = cube.coord('time')
-tstr = tvar.units.num2date(tvar.points[ind])
-gl = ax.gridlines(draw_labels=True)
-gl.xlabels_top = False
-gl.ylabels_right = False
-title('%s: Elevation (m): %s' % (zcube.attributes['title'],tstr));
-
-
-# In[12]:
-
-
+fig, ax = plot_model('SELFE')
 
